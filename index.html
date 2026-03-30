@@ -1,0 +1,1462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ScheduleBot — Design Review Optimizer</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* === RESET & VARIABLES === */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg-deep:#0a0e1a;
+  --bg-surface:#111827;
+  --bg-card:#1a2236;
+  --bg-card-hover:#1f2a42;
+  --bg-input:#0d1220;
+  --border:#1e2d4a;
+  --border-light:#2a3a5c;
+  --text-primary:#e8ecf4;
+  --text-secondary:#8899b4;
+  --text-muted:#556680;
+  --accent:#3b82f6;
+  --accent-glow:#3b82f640;
+  --green:#10b981;
+  --green-soft:#10b98125;
+  --red:#ef4444;
+  --red-soft:#ef444425;
+  --orange:#f59e0b;
+  --orange-soft:#f59e0b25;
+  --purple:#8b5cf6;
+  --font-body:'DM Sans',system-ui,sans-serif;
+  --font-mono:'JetBrains Mono',monospace;
+  --radius:12px;
+  --radius-sm:8px;
+  --radius-xs:6px;
+  --shadow:0 4px 24px rgba(0,0,0,.4);
+}
+html{font-size:15px;scroll-behavior:smooth}
+body{
+  font-family:var(--font-body);
+  background:var(--bg-deep);
+  color:var(--text-primary);
+  min-height:100vh;
+  overflow-x:hidden;
+  line-height:1.6;
+}
+
+/* === BACKGROUND ATMOSPHERE === */
+body::before{
+  content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 10%,#1e3a5f22 0%,transparent 60%),
+    radial-gradient(ellipse 60% 50% at 80% 80%,#3b1f5e18 0%,transparent 60%),
+    radial-gradient(ellipse 40% 30% at 50% 50%,#10b98108 0%,transparent 50%);
+}
+
+/* === LAYOUT === */
+.app{position:relative;z-index:1;max-width:1100px;margin:0 auto;padding:2rem 1.5rem 4rem}
+.header{text-align:center;padding:2.5rem 0 1rem;position:relative}
+.header h1{
+  font-size:1.1rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--text-muted);margin-bottom:.25rem;
+}
+.header .logo{
+  font-size:2.4rem;font-weight:700;
+  background:linear-gradient(135deg,var(--accent),var(--purple));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;
+}
+.header .tagline{font-size:.9rem;color:var(--text-muted);margin-top:.25rem}
+
+/* === CHAT AREA === */
+.chat{display:flex;flex-direction:column;gap:1rem;margin-top:1.5rem}
+.msg{
+  display:flex;gap:.75rem;align-items:flex-start;
+  animation:msgIn .4s cubic-bezier(.22,1,.36,1) both;
+}
+.msg.user{flex-direction:row-reverse}
+@keyframes msgIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+
+.msg-avatar{
+  width:36px;height:36px;border-radius:50%;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  font-size:.85rem;font-weight:600;
+}
+.msg:not(.user) .msg-avatar{background:linear-gradient(135deg,var(--accent),var(--purple));color:#fff}
+.msg.user .msg-avatar{background:var(--bg-card);color:var(--text-secondary);border:1px solid var(--border)}
+
+.msg-bubble{
+  background:var(--bg-card);border:1px solid var(--border);
+  border-radius:var(--radius);padding:.85rem 1.1rem;
+  max-width:680px;font-size:.95rem;color:var(--text-primary);
+  line-height:1.55;
+}
+.msg.user .msg-bubble{background:var(--accent);border-color:var(--accent);color:#fff}
+.msg-bubble strong{color:var(--accent);font-weight:600}
+.msg.user .msg-bubble strong{color:#fff}
+
+/* Typing indicator */
+.typing{display:flex;gap:4px;padding:4px 0}
+.typing span{
+  width:7px;height:7px;border-radius:50%;background:var(--text-muted);
+  animation:blink 1.4s infinite;
+}
+.typing span:nth-child(2){animation-delay:.2s}
+.typing span:nth-child(3){animation-delay:.4s}
+@keyframes blink{0%,60%,100%{opacity:.3;transform:scale(.85)}30%{opacity:1;transform:scale(1)}}
+
+/* === UPLOAD ZONE === */
+.upload-zone{
+  border:2px dashed var(--border-light);border-radius:var(--radius);
+  padding:2.5rem 2rem;text-align:center;cursor:pointer;
+  transition:all .25s ease;position:relative;overflow:hidden;
+  background:var(--bg-surface);margin:.5rem 0;
+}
+.upload-zone:hover,.upload-zone.dragover{
+  border-color:var(--accent);background:var(--bg-card);
+  box-shadow:0 0 30px var(--accent-glow);
+}
+.upload-zone.dragover{transform:scale(1.01)}
+.upload-icon{
+  width:56px;height:56px;margin:0 auto .75rem;border-radius:50%;
+  background:linear-gradient(135deg,var(--accent),var(--purple));
+  display:flex;align-items:center;justify-content:center;
+  font-size:1.5rem;color:#fff;
+}
+.upload-zone h3{font-size:1.05rem;font-weight:600;margin-bottom:.35rem}
+.upload-zone p{font-size:.85rem;color:var(--text-muted)}
+.upload-zone .formats{display:flex;gap:.5rem;justify-content:center;margin-top:.5rem}
+.upload-zone .fmt-tag{font-size:.7rem;padding:.2rem .55rem;border-radius:20px;background:var(--bg-card);border:1px solid var(--border);color:var(--text-muted)}
+.upload-zone input{display:none}
+
+/* === KEY PEOPLE TAGGER === */
+.tagger{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem;margin:.5rem 0}
+.tagger h3{font-size:.95rem;font-weight:600;margin-bottom:.15rem}
+.tagger .subtitle{font-size:.82rem;color:var(--text-muted);margin-bottom:1rem}
+.tagger-search{
+  width:100%;padding:.55rem .8rem;background:var(--bg-input);border:1px solid var(--border);
+  border-radius:var(--radius-sm);color:var(--text-primary);font-family:var(--font-body);
+  font-size:.85rem;outline:none;margin-bottom:.75rem;
+}
+.tagger-search:focus{border-color:var(--accent)}
+.tagger-search::placeholder{color:var(--text-muted)}
+.tagger-list{max-height:340px;overflow-y:auto;display:flex;flex-direction:column;gap:4px}
+.tagger-row{
+  display:grid;grid-template-columns:1fr 120px 120px;gap:.5rem;
+  align-items:center;padding:.45rem .65rem;border-radius:var(--radius-xs);
+  background:var(--bg-surface);border:1px solid transparent;transition:all .15s;
+}
+.tagger-row:hover{border-color:var(--border)}
+.tagger-row.selected{border-color:var(--accent);background:var(--bg-card)}
+.tagger-row .person-name{
+  font-size:.85rem;color:var(--text-primary);cursor:pointer;
+  display:flex;align-items:center;gap:.5rem;
+}
+.tagger-row .person-name input[type=checkbox]{
+  accent-color:var(--accent);width:16px;height:16px;cursor:pointer;
+}
+.tagger-row select{
+  padding:.3rem .4rem;background:var(--bg-input);border:1px solid var(--border);
+  border-radius:var(--radius-xs);color:var(--text-secondary);font-family:var(--font-body);
+  font-size:.78rem;cursor:pointer;outline:none;
+}
+.tagger-row select:focus{border-color:var(--accent)}
+.tagger-row select.disabled-sel{opacity:.4;pointer-events:none}
+.tagger-count{font-size:.82rem;color:var(--text-muted);margin-top:.6rem;display:flex;justify-content:space-between;align-items:center}
+.tagger-actions{display:flex;gap:.5rem;margin-top:.75rem}
+
+/* === MEETING PRIORITY PICKER === */
+.mtg-picker{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem;margin:.5rem 0}
+.mtg-picker h3{font-size:.95rem;font-weight:600;margin-bottom:.15rem}
+.mtg-picker .subtitle{font-size:.82rem;color:var(--text-muted);margin-bottom:1rem}
+.mtg-list{max-height:380px;overflow-y:auto;display:flex;flex-direction:column;gap:4px}
+.mtg-row{
+  display:grid;grid-template-columns:1fr auto;gap:.75rem;
+  align-items:center;padding:.5rem .7rem;border-radius:var(--radius-xs);
+  background:var(--bg-surface);border:1px solid transparent;transition:all .15s;
+}
+.mtg-row:hover{border-color:var(--border)}
+.mtg-row.must-happen{border-color:var(--orange);background:var(--orange-soft)}
+.mtg-row .mtg-info{display:flex;align-items:center;gap:.5rem;font-size:.85rem;cursor:pointer}
+.mtg-row .mtg-info input[type=checkbox]{accent-color:var(--orange);width:16px;height:16px;cursor:pointer}
+.mtg-row .mtg-info .mtg-name{color:var(--text-primary);font-weight:500}
+.mtg-row .mtg-info .mtg-meta{color:var(--text-muted);font-size:.73rem}
+.mtg-row .mtg-info .mtg-star{color:var(--orange);font-weight:700;font-size:1rem;display:none}
+.mtg-row.must-happen .mtg-star{display:inline}
+.mtg-count{font-size:.82rem;color:var(--text-muted);margin-top:.6rem}
+
+/* === ACTION BUTTONS === */
+.btn{
+  display:inline-flex;align-items:center;gap:.5rem;
+  padding:.7rem 1.4rem;border:none;border-radius:var(--radius-sm);
+  font-family:var(--font-body);font-size:.9rem;font-weight:600;
+  cursor:pointer;transition:all .2s ease;
+}
+.btn-primary{
+  background:linear-gradient(135deg,var(--accent),var(--purple));
+  color:#fff;box-shadow:0 4px 16px var(--accent-glow);
+}
+.btn-primary:hover{transform:translateY(-1px);box-shadow:0 6px 24px var(--accent-glow)}
+.btn-ghost{
+  background:transparent;color:var(--text-secondary);
+  border:1px solid var(--border);
+}
+.btn-ghost:hover{color:var(--text-primary);border-color:var(--border-light);background:var(--bg-card)}
+.btn-green{background:var(--green);color:#fff;box-shadow:0 4px 16px rgba(16,185,129,.3)}
+.btn-green:hover{transform:translateY(-1px);box-shadow:0 6px 24px rgba(16,185,129,.4)}
+
+/* === RESULTS DASHBOARD === */
+.dashboard{animation:fadeUp .5s ease both;margin-top:.5rem}
+@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+
+.stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem;margin:1rem 0}
+.stat-card{
+  background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);
+  padding:1.1rem 1.25rem;text-align:center;transition:transform .15s;
+}
+.stat-card:hover{transform:translateY(-2px)}
+.stat-card .label{font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:.35rem}
+.stat-card .value{font-size:2rem;font-weight:700;font-family:var(--font-mono)}
+.stat-card .value.red{color:var(--red)}
+.stat-card .value.green{color:var(--green)}
+.stat-card .value.blue{color:var(--accent)}
+.stat-card .value.orange{color:var(--orange)}
+
+/* === TABLES === */
+.table-section{margin:1.25rem 0}
+.table-section h3{
+  font-size:.85rem;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--text-muted);margin-bottom:.6rem;font-weight:600;
+  display:flex;align-items:center;gap:.5rem;
+}
+.table-wrap{
+  overflow-x:auto;border:1px solid var(--border);
+  border-radius:var(--radius-sm);background:var(--bg-card);
+}
+table{width:100%;border-collapse:collapse;font-size:.82rem}
+th{
+  background:var(--bg-input);color:var(--text-muted);
+  font-weight:600;text-transform:uppercase;letter-spacing:.04em;
+  font-size:.72rem;padding:.65rem .75rem;text-align:left;
+  border-bottom:1px solid var(--border);position:sticky;top:0;
+}
+td{
+  padding:.6rem .75rem;border-bottom:1px solid var(--border);
+  color:var(--text-secondary);white-space:nowrap;
+}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--bg-card-hover)}
+td.critical{color:var(--red);font-weight:600}
+td.high{color:var(--orange);font-weight:500}
+td.changed{color:var(--green);font-weight:500}
+td.old{color:var(--red);text-decoration:line-through;opacity:.7}
+
+.badge{
+  display:inline-block;padding:.15rem .5rem;border-radius:20px;
+  font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.03em;
+}
+.badge-red{background:var(--red-soft);color:var(--red)}
+.badge-green{background:var(--green-soft);color:var(--green)}
+.badge-orange{background:var(--orange-soft);color:var(--orange)}
+
+/* === ROOM GRID === */
+.room-grid-container{margin:1.25rem 0}
+.room-grid-day{margin-bottom:1.5rem}
+.room-grid-day h4{font-size:.82rem;color:var(--text-muted);margin-bottom:.5rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.room-grid{
+  display:grid;gap:2px;font-size:.68rem;
+  border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;
+}
+.room-grid .cell{
+  padding:.35rem .3rem;text-align:center;background:var(--bg-card);
+  color:var(--text-muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.room-grid .cell.header{background:var(--bg-input);font-weight:600;color:var(--text-secondary)}
+.room-grid .cell.time-label{background:var(--bg-input);font-weight:500;font-family:var(--font-mono);font-size:.65rem;color:var(--text-secondary)}
+.room-grid .cell.occupied{background:#3b82f618;color:var(--accent);font-weight:600}
+.room-grid .cell.empty{background:var(--bg-surface)}
+
+/* === EXPANDABLE SECTION === */
+.expandable{margin:1rem 0}
+.expandable summary{
+  cursor:pointer;font-size:.85rem;font-weight:600;color:var(--text-secondary);
+  list-style:none;display:flex;align-items:center;gap:.5rem;
+  padding:.6rem .8rem;background:var(--bg-card);border:1px solid var(--border);
+  border-radius:var(--radius-sm);transition:all .2s;
+}
+.expandable summary:hover{color:var(--text-primary);border-color:var(--border-light)}
+.expandable summary::before{content:'>';font-family:var(--font-mono);transition:transform .2s}
+.expandable[open] summary::before{transform:rotate(90deg)}
+.expandable .content{padding:1rem;font-size:.85rem;color:var(--text-secondary);line-height:1.7}
+.expandable .content code{
+  font-family:var(--font-mono);font-size:.78rem;
+  background:var(--bg-input);padding:.15rem .4rem;border-radius:4px;
+  color:var(--accent);
+}
+
+/* === PERSON SUMMARY === */
+.person-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.6rem;margin:.75rem 0}
+.person-chip{
+  display:flex;align-items:center;justify-content:space-between;
+  background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:.6rem .85rem;font-size:.82rem;
+}
+.person-chip .name{color:var(--text-primary);font-weight:500}
+.person-chip .conflicts{font-family:var(--font-mono);font-weight:600}
+
+/* === RESPONSIVE === */
+@media(max-width:640px){
+  .app{padding:1rem .75rem 3rem}
+  .header .logo{font-size:1.8rem}
+  .stats-row{grid-template-columns:repeat(2,1fr)}
+  .msg-bubble{max-width:90%}
+  table{font-size:.75rem}
+  th,td{padding:.45rem .5rem}
+}
+
+/* === UTILITY === */
+.hidden{display:none!important}
+.mt-1{margin-top:.5rem}
+.mt-2{margin-top:1rem}
+.gap-row{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center}
+.scroll-table{max-height:340px;overflow-y:auto}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="header">
+    <h1>Design Review</h1>
+    <div class="logo">ScheduleBot</div>
+    <div class="tagline">Conflict-free scheduling in seconds</div>
+  </div>
+
+  <div class="chat" id="chat">
+    <!-- Messages injected here -->
+  </div>
+</div>
+
+<script>
+// === GLOBALS ===
+let keyPeople = [], meetings = [], rooms = [];
+let mustHappenIds = new Set(); // meeting IDs that must be scheduled first
+
+// === DOM HELPERS ===
+const chat = document.getElementById('chat');
+function $(sel, ctx=document){return ctx.querySelector(sel)}
+function $$(sel, ctx=document){return[...ctx.querySelectorAll(sel)]}
+
+// Bot message
+function botMsg(html, delay=0){
+  return new Promise(r=>{
+    setTimeout(()=>{
+      const d=document.createElement('div');
+      d.className='msg';
+      d.innerHTML=`<div class="msg-avatar">SB</div><div class="msg-bubble">${html}</div>`;
+      chat.appendChild(d);
+      d.scrollIntoView({behavior:'smooth',block:'end'});
+      r(d);
+    },delay);
+  });
+}
+function userMsg(html){
+  const d=document.createElement('div');
+  d.className='msg user';
+  d.innerHTML=`<div class="msg-avatar">You</div><div class="msg-bubble">${html}</div>`;
+  chat.appendChild(d);
+  d.scrollIntoView({behavior:'smooth',block:'end'});
+}
+function showTyping(){
+  const d=document.createElement('div');d.className='msg';d.id='typing-ind';
+  d.innerHTML=`<div class="msg-avatar">SB</div><div class="msg-bubble"><div class="typing"><span></span><span></span><span></span></div></div>`;
+  chat.appendChild(d);d.scrollIntoView({behavior:'smooth',block:'end'});
+}
+function hideTyping(){const t=document.getElementById('typing-ind');if(t)t.remove()}
+
+function addWidget(html,delay=0){
+  return new Promise(r=>{
+    setTimeout(()=>{
+      const d=document.createElement('div');
+      d.className='dashboard';d.innerHTML=html;
+      chat.appendChild(d);
+      d.scrollIntoView({behavior:'smooth',block:'end'});
+      r(d);
+    },delay);
+  });
+}
+
+// === INIT ===
+async function init(){
+  await botMsg(`Hey there! I'm <strong>ScheduleBot</strong> — your scheduling assistant for design reviews.<br><br>Upload your <strong>Outlook calendar export</strong> (CSV) or a formatted Excel file and I'll detect conflicts, optimize the schedule, and give you a clean output.`);
+  await addWidget(buildUploadZone(), 400);
+  await addWidget(buildFormatHelp(), 100);
+  await addWidget(`<div class="mt-1 gap-row"><button class="btn btn-ghost" onclick="downloadTemplate()">Download Excel template</button><button class="btn btn-ghost" onclick="downloadOutlookSample()">Download Outlook CSV sample</button></div>`, 100);
+  initUpload();
+}
+
+function buildUploadZone(){
+  return `<div class="upload-zone" id="upload-zone">
+    <div class="upload-icon">
+      <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+    </div>
+    <h3>Drop your schedule file here</h3>
+    <p>Outlook CSV export or formatted Excel file</p>
+    <div class="formats"><span class="fmt-tag">Outlook CSV</span><span class="fmt-tag">.xlsx</span><span class="fmt-tag">.xls</span></div>
+    <input type="file" id="file-input" accept=".xlsx,.xls,.csv">
+  </div>`;
+}
+
+function buildFormatHelp(){
+  return `<details class="expandable">
+    <summary>How to prepare your file</summary>
+    <div class="content">
+      <p><strong>Option A: Outlook Calendar Export (easiest)</strong></p>
+      <p>In Outlook: <code>File</code> > <code>Open & Export</code> > <code>Import/Export</code> > <code>Export to a file</code> > <code>Comma Separated Values</code> > select your Calendar > choose date range.</p>
+      <p>Upload the CSV directly — I'll auto-detect the Outlook format and let you tag key people right here.</p>
+      <p style="margin-top:.75rem"><strong>Option B: Formatted Excel (two sheets)</strong></p>
+      <p><strong>Sheet 1: "Key People"</strong> — Columns: <code>Name</code>, <code>Role</code>, <code>Priority</code> (Critical / High / Medium)</p>
+      <p><strong>Sheet 2: "Meetings"</strong> — Columns: <code>Meeting ID</code>, <code>Meeting Name</code>, <code>Date</code>, <code>Start Time</code>, <code>End Time</code>, <code>Room / Link</code>, <code>Organizer</code>, <code>Required Attendees</code>, <code>Optional Attendees</code>, <code>Meeting Size</code>, <code>Status</code></p>
+      <p style="margin-top:.5rem">Attendee names should be <strong>comma-separated</strong> or <strong>semicolon-separated</strong>.</p>
+    </div>
+  </details>`;
+}
+
+function initUpload(){
+  const zone=$('#upload-zone'), inp=$('#file-input');
+  if(!zone||!inp)return;
+  zone.addEventListener('click',()=>inp.click());
+  zone.addEventListener('dragover',e=>{e.preventDefault();zone.classList.add('dragover')});
+  zone.addEventListener('dragleave',()=>zone.classList.remove('dragover'));
+  zone.addEventListener('drop',e=>{e.preventDefault();zone.classList.remove('dragover');if(e.dataTransfer.files.length)handleFile(e.dataTransfer.files[0])});
+  inp.addEventListener('change',()=>{if(inp.files.length)handleFile(inp.files[0])});
+}
+
+// === TEMPLATE DOWNLOAD ===
+function downloadTemplate(){
+  const wb=XLSX.utils.book_new();
+  const kp=[
+    ["Name","Role","Priority"],
+    ["Sarah Chen","VP Design","Critical"],
+    ["Marcus Johnson","Lead Architect","Critical"],
+    ["Priya Patel","UX Director","High"],
+    ["David Kim","Engineering Lead","Medium"]
+  ];
+  const mt=[
+    ["Meeting ID","Meeting Name","Date","Start Time","End Time","Room / Link","Organizer","Required Attendees","Optional Attendees","Meeting Size","Status"],
+    ["M001","Homepage Redesign Review","2026-03-25","9:00 AM","9:45 AM","Room A - Horizon","Aisha Williams","Sarah Chen, Marcus Johnson, Priya Patel","David Kim",5,"Scheduled"],
+    ["M002","Mobile Nav Review","2026-03-25","9:00 AM","9:30 AM","Room B - Summit","Carlos Diaz","Sarah Chen, David Kim","Marcus Johnson",4,"Scheduled"],
+    ["M003","Checkout Flow Review","2026-03-25","10:00 AM","10:45 AM","Room C - Atlas","Elena Rodriguez","Marcus Johnson, Priya Patel","",3,"Tentative"]
+  ];
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(kp),"Key People");
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(mt),"Meetings");
+  XLSX.writeFile(wb,"ScheduleBot_Template.xlsx");
+}
+
+// Outlook CSV sample
+function downloadOutlookSample(){
+  const wb=XLSX.utils.book_new();
+  const data=[
+    ["Subject","Start Date","Start Time","End Date","End Time","All Day Event","Location","Meeting Organizer","Required Attendees","Optional Attendees","Show As"],
+    ["Homepage Redesign Review","3/25/2026","9:00 AM","3/25/2026","9:45 AM","False","Room A - Horizon","Aisha Williams","Sarah Chen; Marcus Johnson; Priya Patel","David Kim; Omar Hassan","Busy"],
+    ["Mobile Nav Design Review","3/25/2026","9:00 AM","3/25/2026","9:30 AM","False","Room B - Summit","Carlos Diaz","Sarah Chen; David Kim; James Thompson","Robert Chang","Busy"],
+    ["Checkout Flow Review","3/25/2026","9:30 AM","3/25/2026","10:15 AM","False","Room C - Atlas","Elena Rodriguez","Marcus Johnson; Priya Patel; Lisa Nakamura","Omar Hassan","Busy"],
+    ["Dashboard Widget Review","3/25/2026","10:00 AM","3/25/2026","10:45 AM","False","Teams: design-reviews","David Kim","Sarah Chen; James Thompson; Michelle Lee","Aisha Williams","Busy"],
+    ["Onboarding UX Review","3/25/2026","10:00 AM","3/25/2026","10:30 AM","False","Room D - Pinnacle","Priya Patel","Elena Rodriguez; Robert Chang; Carlos Diaz","Lisa Nakamura","Tentative"]
+  ];
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(data),"Calendar");
+  XLSX.writeFile(wb,"Outlook_Sample_Export.csv");
+}
+
+// === FILE HANDLING ===
+async function handleFile(file){
+  userMsg(`Uploading <strong>${file.name}</strong>`);
+  showTyping();
+  await delay(600);
+  hideTyping();
+
+  try{
+    const data=await file.arrayBuffer();
+    const wb=XLSX.read(data,{cellDates:true});
+
+    // Detect format: Outlook CSV vs structured Excel
+    const format=detectFormat(wb);
+
+    if(format==='outlook'){
+      await botMsg(`I detected an <strong>Outlook calendar export</strong>. Let me parse it...`);
+      showTyping();await delay(400);hideTyping();
+      const parsed=parseOutlookCSV(wb);
+      if(parsed.error){
+        await botMsg(`<span style="color:var(--red)">${parsed.error}</span>`);
+        return;
+      }
+      meetings=parsed.meetings;
+      rooms=parsed.rooms;
+      await botMsg(`Found <strong>${meetings.length} meetings</strong>. Now I need to know who your key decision makers are.`);
+      showTyping();await delay(400);hideTyping();
+      await botMsg(`I found <strong>${parsed.allPeople.length} unique attendees</strong> across all meetings. Select the ones who are key decision makers or facilitators, and set their priority.`);
+      await addWidget(buildTagger(parsed.allPeople),200);
+    }else if(format==='structured'){
+      const parsed=parseWorkbook(wb);
+      if(parsed.error){
+        await botMsg(`<span style="color:var(--red)">Hmm, something's off.</span><br>${parsed.error}`);
+        return;
+      }
+      keyPeople=parsed.keyPeople;
+      meetings=parsed.meetings;
+      rooms=parsed.rooms;
+      await showMeetingPriorityPicker();
+    }else{
+      await botMsg(`<span style="color:var(--red)">I couldn't determine the file format.</span><br>Upload an Outlook CSV export or an Excel file with "Key People" and "Meetings" sheets.`);
+    }
+  }catch(e){
+    hideTyping();
+    await botMsg(`<span style="color:var(--red)">I couldn't read that file.</span><br><small>${e.message}</small>`);
+  }
+}
+
+function detectFormat(wb){
+  // Check for structured format (has Key People + Meetings sheets)
+  const names=wb.SheetNames.map(n=>n.toLowerCase().trim());
+  const hasKeyPeople=names.some(n=>n.includes('key')||n.includes('people'));
+  const hasMeetings=names.some(n=>n.includes('meeting'));
+  if(hasKeyPeople&&hasMeetings)return'structured';
+  if(wb.SheetNames.length===2&&!hasKeyPeople)return'structured'; // fallback: 2-sheet format
+
+  // Check first (or only) sheet for Outlook columns
+  const sheet=wb.Sheets[wb.SheetNames[0]];
+  const rows=XLSX.utils.sheet_to_json(sheet,{defval:''});
+  if(rows.length===0)return'unknown';
+  const cols=Object.keys(rows[0]).map(k=>k.toLowerCase().trim());
+  const outlookSignals=['subject','start date','end date','meeting organizer','required attendees','all day event','show as'];
+  const matchCount=outlookSignals.filter(s=>cols.some(c=>c.includes(s)||s.includes(c))).length;
+  if(matchCount>=3)return'outlook';
+
+  // Single sheet with Subject + attendee columns = treat as outlook-like
+  if(cols.some(c=>c.includes('subject'))&&cols.some(c=>c.includes('attendee')||c.includes('required')))return'outlook';
+
+  // If 2 sheets, try structured anyway
+  if(wb.SheetNames.length>=2)return'structured';
+
+  return'unknown';
+}
+
+// === OUTLOOK CSV PARSER ===
+function parseOutlookCSV(wb){
+  const sheet=wb.Sheets[wb.SheetNames[0]];
+  const rows=XLSX.utils.sheet_to_json(sheet,{defval:''});
+  if(rows.length===0)return{error:"The file appears to be empty."};
+
+  const mtParsed=[];
+  const roomSet=new Set();
+  const peopleSet=new Set();
+
+  for(const row of rows){
+    const subject=String(findCol(row,['Subject','subject','Title','title','Meeting Name','meeting name'])||'').trim();
+    if(!subject)continue;
+
+    // Outlook has "Start Date" + "Start Time" as separate columns, or combined
+    let dateRaw=findCol(row,['Start Date','start date','Date','date']);
+    let startRaw=findCol(row,['Start Time','start time']);
+    let endRaw=findCol(row,['End Time','end time']);
+    const endDateRaw=findCol(row,['End Date','end date']);
+
+    // Some Outlook exports have combined date+time in one column
+    if(!startRaw&&!dateRaw){
+      const combined=findCol(row,['Start','start','Start Date/Time']);
+      if(combined){dateRaw=combined;startRaw=combined}
+    }
+    if(!endRaw){
+      const combined=findCol(row,['End','end','End Date/Time']);
+      if(combined)endRaw=combined;
+    }
+
+    const location=String(findCol(row,['Location','location','Room','room'])||'').trim();
+    const organizer=String(findCol(row,['Meeting Organizer','meeting organizer','Organizer','organizer','Organized By'])||'').trim();
+    const reqRaw=String(findCol(row,['Required Attendees','required attendees','Required','Attendees','attendees'])||'');
+    const optRaw=String(findCol(row,['Optional Attendees','optional attendees','Optional'])||'');
+    const allDay=String(findCol(row,['All Day Event','all day event','All day event'])||'').toLowerCase();
+    const showAs=String(findCol(row,['Show As','show as','Busy Status'])||'');
+
+    // Skip all-day events (typically not design reviews)
+    if(allDay==='true'||allDay==='yes')continue;
+
+    const dateVal=parseDate(dateRaw, startRaw);
+    const startMin=parseTimeToMin(startRaw, dateRaw);
+    const endMin=parseTimeToMin(endRaw, endDateRaw||dateRaw);
+    if(startMin===null||endMin===null||!dateVal)continue;
+    if(endMin<=startMin)continue; // skip invalid
+
+    // Parse attendees — Outlook uses semicolons
+    const reqList=splitAttendees(reqRaw);
+    const optList=splitAttendees(optRaw);
+    if(location)roomSet.add(location);
+    reqList.forEach(p=>peopleSet.add(p));
+    optList.forEach(p=>peopleSet.add(p));
+    if(organizer)peopleSet.add(organizer);
+
+    mtParsed.push({
+      id:`M${String(mtParsed.length+1).padStart(3,'0')}`,
+      name:subject, date:dateVal, startMin, endMin,
+      duration:endMin-startMin, room:location, organizer,
+      required:reqList, optional:optList,
+      size:reqList.length+optList.length,
+      status:showAs||'Scheduled',
+      day:dateVal.getDay()
+    });
+  }
+
+  if(mtParsed.length===0)return{error:"No valid meetings found. Check that the file has Subject, Start Date, Start Time, End Date, End Time columns."};
+
+  // Sort people by frequency (most meetings first)
+  const peopleCounts=new Map();
+  for(const m of mtParsed){
+    for(const p of [...m.required,...m.optional]){
+      peopleCounts.set(p,(peopleCounts.get(p)||0)+1);
+    }
+  }
+  const allPeople=[...peopleCounts.entries()]
+    .sort((a,b)=>b[1]-a[1])
+    .map(([name,count])=>({name,meetingCount:count}));
+
+  return{meetings:mtParsed, rooms:[...roomSet], allPeople};
+}
+
+function splitAttendees(raw){
+  if(!raw)return[];
+  // Outlook uses semicolons, but also handle commas
+  // Attendee format may be "Last, First" or "email@domain.com" or "Name (email)"
+  let delim=';';
+  if(!raw.includes(';')&&raw.includes(','))delim=',';
+  return raw.split(delim).map(s=>{
+    s=s.trim();
+    // Remove email in parentheses: "John Doe (john@company.com)" -> "John Doe"
+    s=s.replace(/\s*\([^)]*\)\s*/g,'').trim();
+    // Remove email addresses if that's all there is
+    // Keep as-is if it's a name
+    return s;
+  }).filter(Boolean);
+}
+
+// === KEY PEOPLE TAGGER UI ===
+function buildTagger(allPeople){
+  let html=`<div class="tagger" id="key-people-tagger">
+    <h3>Tag your key decision makers</h3>
+    <div class="subtitle">Select people who must not be double-booked. People in the most meetings are listed first.</div>
+    <input type="text" class="tagger-search" id="tagger-search" placeholder="Search by name...">
+    <div class="tagger-list" id="tagger-list">`;
+
+  for(const p of allPeople){
+    html+=`<div class="tagger-row" data-name="${escHtml(p.name)}">
+      <label class="person-name">
+        <input type="checkbox" value="${escHtml(p.name)}">
+        <span>${escHtml(p.name)}</span>
+        <span style="color:var(--text-muted);font-size:.75rem">(${p.meetingCount} meetings)</span>
+      </label>
+      <select class="disabled-sel" data-field="role">
+        <option value="">Role</option>
+        <option value="Decision Maker">Decision Maker</option>
+        <option value="Facilitator">Facilitator</option>
+        <option value="Design Lead">Design Lead</option>
+        <option value="Tech Lead">Tech Lead</option>
+        <option value="Product Owner">Product Owner</option>
+        <option value="Reviewer">Reviewer</option>
+        <option value="Stakeholder">Stakeholder</option>
+      </select>
+      <select class="disabled-sel" data-field="priority">
+        <option value="Critical">Critical</option>
+        <option value="High">High</option>
+        <option value="Medium">Medium</option>
+      </select>
+    </div>`;
+  }
+
+  html+=`</div>
+    <div class="tagger-count"><span id="tagger-count-text">0 people selected</span>
+      <span><button class="btn btn-ghost" onclick="selectTopN(5)" style="padding:.3rem .7rem;font-size:.78rem">Select top 5</button>
+      <button class="btn btn-ghost" onclick="selectTopN(10)" style="padding:.3rem .7rem;font-size:.78rem">Select top 10</button></span>
+    </div>
+    <div class="tagger-actions">
+      <button class="btn btn-primary" onclick="confirmKeyPeople()">Optimize schedule</button>
+    </div>
+  </div>`;
+  return html;
+}
+
+function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+
+// Tagger interactivity (delegated events)
+document.addEventListener('change',function(e){
+  if(e.target.matches('.tagger-row input[type=checkbox]')){
+    const row=e.target.closest('.tagger-row');
+    const sels=row.querySelectorAll('select');
+    if(e.target.checked){
+      row.classList.add('selected');
+      sels.forEach(s=>s.classList.remove('disabled-sel'));
+    }else{
+      row.classList.remove('selected');
+      sels.forEach(s=>s.classList.add('disabled-sel'));
+    }
+    updateTaggerCount();
+  }
+});
+document.addEventListener('input',function(e){
+  if(e.target.id==='tagger-search'){
+    const q=e.target.value.toLowerCase();
+    const rows=document.querySelectorAll('.tagger-row');
+    rows.forEach(r=>{
+      const name=r.dataset.name.toLowerCase();
+      r.style.display=name.includes(q)?'':'none';
+    });
+  }
+});
+
+function updateTaggerCount(){
+  const checked=document.querySelectorAll('.tagger-row input[type=checkbox]:checked').length;
+  const el=document.getElementById('tagger-count-text');
+  if(el)el.textContent=`${checked} people selected`;
+}
+
+function selectTopN(n){
+  const rows=document.querySelectorAll('.tagger-row');
+  let count=0;
+  rows.forEach(r=>{
+    const cb=r.querySelector('input[type=checkbox]');
+    if(count<n&&r.style.display!=='none'){
+      cb.checked=true;
+      r.classList.add('selected');
+      r.querySelectorAll('select').forEach(s=>s.classList.remove('disabled-sel'));
+      count++;
+    }
+  });
+  updateTaggerCount();
+}
+
+async function confirmKeyPeople(){
+  const rows=document.querySelectorAll('.tagger-row');
+  keyPeople=[];
+  rows.forEach(r=>{
+    const cb=r.querySelector('input[type=checkbox]');
+    if(!cb.checked)return;
+    const name=r.dataset.name;
+    const role=r.querySelector('select[data-field=role]').value||'Reviewer';
+    const priority=r.querySelector('select[data-field=priority]').value||'High';
+    keyPeople.push({name,role,priority});
+  });
+
+  if(keyPeople.length===0){
+    await botMsg(`Please select at least one key person to track.`);
+    return;
+  }
+
+  // Remove tagger
+  const tagger=document.getElementById('key-people-tagger');
+  if(tagger)tagger.remove();
+
+  const names=keyPeople.map(k=>k.name).join(', ');
+  userMsg(`Track these ${keyPeople.length} people: <strong>${keyPeople.filter(k=>k.priority==='Critical').length} Critical</strong>, <strong>${keyPeople.filter(k=>k.priority==='High').length} High</strong>, <strong>${keyPeople.filter(k=>k.priority==='Medium').length} Medium</strong>`);
+
+  await showMeetingPriorityPicker();
+}
+
+// === MEETING PRIORITY PICKER ===
+async function showMeetingPriorityPicker(){
+  showTyping();await delay(400);hideTyping();
+  await botMsg(`One more thing — are there any <strong>must-happen meetings</strong>? These will be scheduled first in the best available slots. Everything else will be arranged around them.`);
+  await addWidget(buildMeetingPicker(),200);
+}
+
+function buildMeetingPicker(){
+  // Group by day
+  const byDay=new Map();
+  for(const m of meetings){
+    const dk=dateFmt(m.date);
+    if(!byDay.has(dk))byDay.set(dk,[]);
+    byDay.get(dk).push(m);
+  }
+
+  let html=`<div class="mtg-picker" id="mtg-priority-picker">
+    <h3>Mark must-happen meetings</h3>
+    <div class="subtitle">Check the meetings that absolutely must happen. They'll get first pick of the best time slots. Uncheck = flexible (can be moved freely).</div>
+    <div class="mtg-list">`;
+
+  for(const [day,dayMeetings] of byDay){
+    html+=`<div style="font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);padding:.4rem .3rem .2rem;font-weight:600">${day}</div>`;
+    for(const m of dayMeetings){
+      const timeStr=`${minToTime(m.startMin)}-${minToTime(m.endMin)}`;
+      const attendeeCount=[...m.required,...m.optional].length;
+      html+=`<div class="mtg-row" data-mid="${escHtml(m.id)}">
+        <label class="mtg-info">
+          <input type="checkbox" value="${escHtml(m.id)}">
+          <span class="mtg-star">*</span>
+          <span>
+            <span class="mtg-name">${escHtml(m.name)}</span><br>
+            <span class="mtg-meta">${m.id} &middot; ${timeStr} &middot; ${attendeeCount} attendees &middot; ${escHtml(m.room||'No room')}</span>
+          </span>
+        </label>
+      </div>`;
+    }
+  }
+
+  html+=`</div>
+    <div class="mtg-count"><span id="mtg-count-text">0 must-happen meetings selected</span></div>
+    <div style="display:flex;gap:.5rem;margin-top:.75rem">
+      <button class="btn btn-primary" onclick="confirmMeetingPriorities()">Optimize schedule</button>
+      <button class="btn btn-ghost" onclick="skipMeetingPriorities()">Skip — all meetings are equal</button>
+    </div>
+  </div>`;
+  return html;
+}
+
+// Meeting picker interactivity
+document.addEventListener('change',function(e){
+  if(e.target.matches('.mtg-row input[type=checkbox]')){
+    const row=e.target.closest('.mtg-row');
+    if(e.target.checked){row.classList.add('must-happen')}
+    else{row.classList.remove('must-happen')}
+    const checked=document.querySelectorAll('.mtg-row input[type=checkbox]:checked').length;
+    const el=document.getElementById('mtg-count-text');
+    if(el)el.textContent=`${checked} must-happen meeting${checked!==1?'s':''} selected`;
+  }
+});
+
+async function confirmMeetingPriorities(){
+  mustHappenIds=new Set();
+  document.querySelectorAll('.mtg-row input[type=checkbox]:checked').forEach(cb=>{
+    mustHappenIds.add(cb.value);
+  });
+
+  const picker=document.getElementById('mtg-priority-picker');
+  if(picker)picker.remove();
+
+  if(mustHappenIds.size>0){
+    userMsg(`<strong>${mustHappenIds.size} must-happen meeting${mustHappenIds.size>1?'s':''}</strong> will be scheduled first.`);
+  }else{
+    userMsg(`No must-happen meetings — all meetings are flexible.`);
+  }
+
+  await runOptimization();
+}
+
+async function skipMeetingPriorities(){
+  mustHappenIds=new Set();
+  const picker=document.getElementById('mtg-priority-picker');
+  if(picker)picker.remove();
+  userMsg(`All meetings treated equally.`);
+  await runOptimization();
+}
+
+function parseWorkbook(wb){
+  // Find sheets
+  let kpSheet=null,mtSheet=null;
+  for(const name of wb.SheetNames){
+    const n=name.toLowerCase().trim();
+    if(n.includes('key')||n.includes('people'))kpSheet=wb.Sheets[name];
+    if(n.includes('meeting'))mtSheet=wb.Sheets[name];
+  }
+  if(!kpSheet&&wb.SheetNames.length>=1)kpSheet=wb.Sheets[wb.SheetNames[0]];
+  if(!mtSheet&&wb.SheetNames.length>=2)mtSheet=wb.Sheets[wb.SheetNames[1]];
+  if(!kpSheet||!mtSheet)return{error:"Could not find both required sheets. I need a <strong>Key People</strong> sheet and a <strong>Meetings</strong> sheet."};
+
+  const kpData=XLSX.utils.sheet_to_json(kpSheet,{defval:''});
+  const mtData=XLSX.utils.sheet_to_json(mtSheet,{defval:''});
+
+  if(kpData.length===0)return{error:"The Key People sheet appears to be empty."};
+  if(mtData.length===0)return{error:"The Meetings sheet appears to be empty."};
+
+  // Parse key people
+  const kpParsed=[];
+  for(const row of kpData){
+    const name=String(row['Name']||row['name']||'').trim();
+    const role=String(row['Role']||row['role']||'').trim();
+    const pri=String(row['Priority']||row['priority']||'Medium').trim();
+    if(name)kpParsed.push({name,role,priority:normPriority(pri)});
+  }
+
+  // Parse meetings
+  const mtParsed=[];
+  const roomSet=new Set();
+  for(const row of mtData){
+    const mid=String(findCol(row,['Meeting ID','meeting id','ID','id'])||'').trim();
+    const mname=String(findCol(row,['Meeting Name','meeting name','Name','name','Subject','subject'])||'').trim();
+    const dateRaw=findCol(row,['Date','date','Start Date','start date']);
+    const startRaw=findCol(row,['Start Time','start time','Start','start']);
+    const endRaw=findCol(row,['End Time','end time','End','end']);
+    const room=String(findCol(row,['Room / Link','Room','room','Location','location','Room/Link'])||'').trim();
+    const org=String(findCol(row,['Organizer','organizer','Organized By'])||'').trim();
+    const reqRaw=String(findCol(row,['Required Attendees','required attendees','Required','required'])||'');
+    const optRaw=String(findCol(row,['Optional Attendees','optional attendees','Optional','optional'])||'');
+    const size=parseInt(findCol(row,['Meeting Size','meeting size','Size','size'])||'0')||0;
+    const status=String(findCol(row,['Status','status'])||'Scheduled').trim();
+
+    if(!mname)continue;
+    const dateVal=parseDate(dateRaw, startRaw);
+    const startMin=parseTimeToMin(startRaw, dateRaw);
+    const endMin=parseTimeToMin(endRaw, dateRaw);
+    if(startMin===null||endMin===null||!dateVal)continue;
+
+    const reqList=splitAttendees(reqRaw);
+    const optList=splitAttendees(optRaw);
+    if(room)roomSet.add(room);
+
+    mtParsed.push({
+      id:mid||`M${String(mtParsed.length+1).padStart(3,'0')}`,
+      name:mname, date:dateVal, startMin, endMin,
+      duration:endMin-startMin, room, organizer:org,
+      required:reqList, optional:optList, size, status,
+      day:dateVal.getDay()
+    });
+  }
+
+  if(kpParsed.length===0)return{error:"No valid key people found. Check the Name column."};
+  if(mtParsed.length===0)return{error:"No valid meetings found. Check date/time columns."};
+
+  return{keyPeople:kpParsed, meetings:mtParsed, rooms:[...roomSet]};
+}
+
+function findCol(row, candidates){
+  for(const c of candidates){if(row[c]!==undefined)return row[c]}
+  for(const key of Object.keys(row)){
+    const kl=key.toLowerCase().trim();
+    for(const c of candidates){if(kl===c.toLowerCase())return row[key]}
+  }
+  return undefined;
+}
+function normPriority(p){
+  const l=p.toLowerCase();
+  if(l.startsWith('crit'))return'Critical';
+  if(l.startsWith('high'))return'High';
+  return'Medium';
+}
+function parseDate(raw, startRaw){
+  if(raw instanceof Date)return raw;
+  if(startRaw instanceof Date)return startRaw;
+  if(typeof raw==='number'){
+    // Excel serial date
+    const d=new Date((raw-25569)*86400000);
+    return isNaN(d)?null:d;
+  }
+  const d=new Date(raw);
+  return isNaN(d)?null:d;
+}
+function parseTimeToMin(raw, dateRaw){
+  if(raw instanceof Date){return raw.getHours()*60+raw.getMinutes()}
+  if(typeof raw==='number'){
+    // Excel time fraction
+    const totalMin=Math.round(raw*24*60);
+    return totalMin;
+  }
+  if(typeof raw==='string'){
+    const s=raw.trim().toUpperCase();
+    // Try HH:MM AM/PM
+    const m=s.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+    if(m){
+      let h=parseInt(m[1]),min=parseInt(m[2]);
+      if(m[3]==='PM'&&h<12)h+=12;
+      if(m[3]==='AM'&&h===12)h=0;
+      return h*60+min;
+    }
+    // Try as date
+    const d=new Date(raw);
+    if(!isNaN(d))return d.getHours()*60+d.getMinutes();
+  }
+  return null;
+}
+function minToTime(min){const h=Math.floor(min/60),m=min%60;const ap=h>=12?'PM':'AM';const hh=h>12?h-12:(h===0?12:h);return`${hh}:${String(m).padStart(2,'0')} ${ap}`}
+function dayLabel(d){const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];return days[d.getDay()];}
+function dateFmt(d){const mo=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];return`${dayLabel(d)} ${mo[d.getMonth()]} ${d.getDate()}`}
+function delay(ms){return new Promise(r=>setTimeout(r,ms))}
+
+// === CONFLICT DETECTION ===
+function getAllAttendees(m){return[...m.required,...m.optional]}
+function getKeyAttendees(m){const names=new Set(keyPeople.map(k=>k.name));return getAllAttendees(m).filter(n=>names.has(n))}
+function sameDay(a,b){return a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate()}
+function overlaps(s1,e1,s2,e2){return s1<e2&&s2<e1}
+function isVirtualRoom(room){
+  if(!room)return false;
+  const r=room.toLowerCase();
+  return r.includes('teams')||r.includes('zoom')||r.includes('meet')||r.includes('webex')||r.includes('virtual')||r.includes('online')||r.includes('http')||r.includes('call');
+}
+
+function detectConflicts(sched){
+  const conflicts=[];
+  for(let i=0;i<sched.length;i++){
+    for(let j=i+1;j<sched.length;j++){
+      const a=sched[i],b=sched[j];
+      if(!sameDay(a.date,b.date))continue;
+      if(!overlaps(a.startMin,a.endMin,b.startMin,b.endMin))continue;
+      const common=new Set([...getKeyAttendees(a)].filter(x=>getKeyAttendees(b).includes(x)));
+      for(const p of common){
+        const ov=Math.min(a.endMin,b.endMin)-Math.max(a.startMin,b.startMin);
+        const info=keyPeople.find(k=>k.name===p)||{role:'',priority:'Medium'};
+        conflicts.push({person:p,role:info.role,priority:info.priority,m1:a,m2:b,overlap:ov});
+      }
+    }
+  }
+  return conflicts;
+}
+
+// === OPTIMIZER ===
+function optimize(meetingsIn){
+  const kpMap=new Map(keyPeople.map(k=>[k.name,k]));
+  // Time slots: 8 AM to 5 PM in 30-min increments, skip 12-1 lunch
+  const allSlots=[];
+  for(let h=8;h<17;h++){if(h===12)continue;allSlots.push(h*60);allSlots.push(h*60+30)}
+
+  // Separate physical rooms and virtual rooms; prefer physical
+  const availRooms=rooms.length>0?rooms:['Room 1','Room 2','Room 3','Room 4','Room 5','Room 6'];
+  if(availRooms.length<2){for(let i=availRooms.length;i<6;i++)availRooms.push(`Room ${i+1}`)}
+  const physicalRooms=availRooms.filter(r=>!isVirtualRoom(r));
+  const virtualRooms=availRooms.filter(r=>isVirtualRoom(r));
+  // Ensure at least one virtual room exists for virtual meetings
+  if(virtualRooms.length===0)virtualRooms.push('Virtual / Teams');
+
+  // Group meetings by day
+  const dayGroups=new Map();
+  for(const m of meetingsIn){
+    const dk=m.date.toDateString();
+    if(!dayGroups.has(dk))dayGroups.set(dk,[]);
+    dayGroups.get(dk).push(m);
+  }
+
+  function priScore(m){
+    let s=0;
+    // Must-happen meetings get massive priority boost
+    if(mustHappenIds.has(m.id))s+=1000;
+    for(const p of getKeyAttendees(m)){
+      const info=kpMap.get(p);
+      if(!info)continue;
+      if(info.priority==='Critical')s+=10;
+      else if(info.priority==='High')s+=5;
+      else s+=1;
+    }
+    return s;
+  }
+
+  function evalSchedule(sched){
+    let score=0;
+    for(let i=0;i<sched.length;i++){
+      for(let j=i+1;j<sched.length;j++){
+        const a=sched[i],b=sched[j];
+        if(!sameDay(a.date,b.date))continue;
+        if(!overlaps(a.startMin,a.endMin,b.startMin,b.endMin))continue;
+        if(a.room===b.room)score+=50;
+        const common=getKeyAttendees(a).filter(x=>getKeyAttendees(b).includes(x));
+        for(const p of common){
+          const info=kpMap.get(p);
+          const w=info?(info.priority==='Critical'?10:info.priority==='High'?5:1):1;
+          score+=w*10;
+        }
+      }
+    }
+    return score;
+  }
+
+  function buildSchedule(order){
+    const scheduled=[];
+    const roomBusy=new Map(); // dayKey -> room -> [[s,e]]
+    const personBusy=new Map(); // dayKey -> person -> [[s,e]]
+
+    function getBusy(map,dk,key){
+      if(!map.has(dk))map.set(dk,new Map());
+      const dm=map.get(dk);
+      if(!dm.has(key))dm.set(key,[]);
+      return dm.get(key);
+    }
+    function isFree(list,s,e){return list.every(([bs,be])=>s>=be||e<=bs)}
+
+    for(const m of order){
+      const dk=m.date.toDateString();
+      const dur=m.duration;
+      const keyAtt=getKeyAttendees(m);
+      const mIsVirtual=isVirtualRoom(m.room);
+      let bestSlot=null,bestRoom=null,bestScore=Infinity;
+
+      // Determine which rooms to try and in what order
+      // In-person preferred; virtual meetings get virtual rooms
+      let roomOrder;
+      if(mIsVirtual){
+        roomOrder=[...virtualRooms,...physicalRooms]; // virtual first for virtual meetings
+      }else{
+        roomOrder=[...physicalRooms,...virtualRooms]; // physical first for in-person
+      }
+
+      for(const slot of allSlots){
+        const eMin=slot+dur;
+        if(eMin>17*60)continue;
+        if(slot<13*60&&eMin>12*60)continue;
+        // Virtual meetings: restrict to 8:00-11:00 AM window
+        if(mIsVirtual&&(slot<8*60||eMin>11*60))continue;
+        // In-person meetings: prefer 9 AM onwards (but allow 8 AM if needed)
+        let allFree=true;
+        for(const p of keyAtt){
+          if(!isFree(getBusy(personBusy,dk,p),slot,eMin)){allFree=false;break}
+        }
+        if(!allFree)continue;
+        for(const room of roomOrder){
+          if(isFree(getBusy(roomBusy,dk,room),slot,eMin)){
+            // Scoring: prefer physical rooms (lower score), earlier slots
+            // Virtual rooms get +100 penalty when assigned to in-person meetings
+            let sc=slot;
+            if(!mIsVirtual&&isVirtualRoom(room))sc+=100; // penalize virtual room for in-person
+            if(mIsVirtual&&!isVirtualRoom(room))sc+=50; // penalize physical room for virtual
+            if(sc<bestScore){bestScore=sc;bestSlot=slot;bestRoom=room}
+            break;
+          }
+        }
+        if(bestSlot!==null&&bestScore<=slot)break;
+      }
+
+      if(bestSlot===null){
+        // Fallback: try the meeting's ORIGINAL time slot first (keeps schedule stable)
+        let minC=Infinity;
+        const origSlot=m.startMin;
+        const origEnd=origSlot+dur;
+        if(origEnd<=17*60&&!(origSlot<13*60&&origEnd>12*60)){
+          let cc=0;
+          if(mIsVirtual&&(origSlot<8*60||origEnd>11*60))cc+=20;
+          for(const p of keyAtt){if(!isFree(getBusy(personBusy,dk,p),origSlot,origEnd))cc+=kpMap.get(p)?.priority==='Critical'?10:3}
+          for(const room of roomOrder){
+            if(isFree(getBusy(roomBusy,dk,room),origSlot,origEnd)){
+              minC=cc;bestSlot=origSlot;bestRoom=room;
+              break;
+            }
+          }
+        }
+        // Then try all other slots, pick least-conflict (relax virtual time constraint)
+        for(const slot of allSlots){
+          const eMin=slot+dur;
+          if(eMin>17*60)continue;
+          if(slot<13*60&&eMin>12*60)continue;
+          let cc=0;
+          if(mIsVirtual&&(slot<8*60||eMin>11*60))cc+=20;
+          for(const p of keyAtt){if(!isFree(getBusy(personBusy,dk,p),slot,eMin))cc+=kpMap.get(p)?.priority==='Critical'?10:3}
+          for(const room of roomOrder){
+            if(isFree(getBusy(roomBusy,dk,room),slot,eMin)){
+              if(cc<minC){minC=cc;bestSlot=slot;bestRoom=room}
+              break;
+            }
+          }
+        }
+      }
+      if(bestSlot===null){bestSlot=m.startMin;bestRoom=m.room||roomOrder[0]}
+
+      const newM={...m,startMin:bestSlot,endMin:bestSlot+dur,room:bestRoom};
+      getBusy(roomBusy,dk,bestRoom).push([bestSlot,bestSlot+dur]);
+      for(const p of keyAtt)getBusy(personBusy,dk,p).push([bestSlot,bestSlot+dur]);
+      scheduled.push(newM);
+    }
+    return scheduled;
+  }
+
+  // Run 30 iterations
+  let bestSched=null,bestScore=Infinity;
+  const baseSorted=[...meetingsIn].sort((a,b)=>priScore(b)-priScore(a));
+
+  for(let it=0;it<30;it++){
+    let order;
+    if(it===0){order=[...baseSorted]}
+    else{
+      // Must-happen meetings always go first (never shuffled out of position)
+      const mustHappen=baseSorted.filter(m=>mustHappenIds.has(m.id));
+      const critNonMust=baseSorted.filter(m=>!mustHappenIds.has(m.id)&&getKeyAttendees(m).some(p=>kpMap.get(p)?.priority==='Critical'));
+      const rest=baseSorted.filter(m=>!mustHappenIds.has(m.id)&&!critNonMust.includes(m));
+      shuffle(mustHappen);shuffle(critNonMust);shuffle(rest);
+      order=[...mustHappen,...critNonMust,...rest];
+    }
+    const sched=buildSchedule(order);
+    const sc=evalSchedule(sched);
+    if(sc<bestScore){bestScore=sc;bestSched=sched}
+    if(sc===0)break;
+  }
+
+  // Safety: never return a schedule worse than the original
+  const origScore=evalSchedule(meetingsIn);
+  if(bestScore>origScore){return meetingsIn}
+  return bestSched;
+}
+
+function shuffle(arr){for(let i=arr.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[arr[i],arr[j]]=[arr[j],arr[i]]}}
+
+// === RUN OPTIMIZATION ===
+async function runOptimization(){
+  const days=new Set(meetings.map(m=>m.date.toDateString()));
+
+  showTyping();await delay(700);hideTyping();
+  await botMsg(`Reading your schedule...`);
+
+  showTyping();await delay(600);hideTyping();
+  await botMsg(`Found <strong>${meetings.length} meetings</strong> across <strong>${days.size} day${days.size>1?'s':''}</strong>.`);
+
+  showTyping();await delay(500);hideTyping();
+  let trackMsg=`Tracking <strong>${keyPeople.length} key decision makers</strong>.`;
+  if(mustHappenIds.size>0)trackMsg+=` <strong style="color:var(--orange)">${mustHappenIds.size} must-happen meeting${mustHappenIds.size>1?'s':''}</strong> will be scheduled first.`;
+  await botMsg(trackMsg);
+
+  const beforeConflicts=detectConflicts(meetings);
+
+  showTyping();await delay(700);hideTyping();
+  if(beforeConflicts.length>0){
+    await botMsg(`Detected <strong style="color:var(--red)">${beforeConflicts.length} conflicts</strong>! Let me fix that...`);
+  }else{
+    await botMsg(`No conflicts found — your schedule looks clean already!`);
+    return;
+  }
+
+  showTyping();await delay(900);hideTyping();
+  await botMsg(`Optimizing schedule...<br><small style="color:var(--text-muted)">In-person meetings preferred. Virtual meetings scheduled 8-11 AM.</small>`);
+
+  const optimized=optimize(meetings);
+  const afterConflicts=detectConflicts(optimized);
+
+  // Build change log
+  const origMap=new Map(meetings.map(m=>[m.id,m]));
+  const changes=[];
+  for(const nm of optimized){
+    const om=origMap.get(nm.id);
+    if(!om)continue;
+    const timeChanged=om.startMin!==nm.startMin||om.endMin!==nm.endMin;
+    const roomChanged=om.room!==nm.room;
+    if(timeChanged||roomChanged){
+      changes.push({id:nm.id,name:nm.name,day:dateFmt(nm.date),
+        changed:(timeChanged?'Time':'')+(timeChanged&&roomChanged?' + ':'')+(roomChanged?'Room':''),
+        oldTime:`${minToTime(om.startMin)} - ${minToTime(om.endMin)}`,
+        newTime:`${minToTime(nm.startMin)} - ${minToTime(nm.endMin)}`,
+        oldRoom:om.room, newRoom:nm.room
+      });
+    }
+  }
+
+  showTyping();await delay(600);hideTyping();
+  const resolved=beforeConflicts.length-afterConflicts.length;
+  if(afterConflicts.length===0){
+    await botMsg(`<strong style="color:var(--green)">Done! All ${beforeConflicts.length} conflicts resolved.</strong><br>${changes.length} meetings were rescheduled.`);
+  }else{
+    await botMsg(`Optimization complete. <strong style="color:var(--green)">${resolved} conflicts resolved</strong>, <strong style="color:var(--orange)">${afterConflicts.length} remaining</strong> (couldn't fully resolve due to constraints).<br>${changes.length} meetings rescheduled.`);
+  }
+
+  // === RENDER DASHBOARD ===
+  // Stats
+  await addWidget(`
+    <div class="stats-row">
+      <div class="stat-card"><div class="label">Conflicts Before</div><div class="value red">${beforeConflicts.length}</div></div>
+      <div class="stat-card"><div class="label">Conflicts After</div><div class="value green">${afterConflicts.length}</div></div>
+      <div class="stat-card"><div class="label">Meetings Moved</div><div class="value blue">${changes.length}</div></div>
+      <div class="stat-card"><div class="label">Key People Tracked</div><div class="value orange">${keyPeople.length}</div></div>
+    </div>
+  `,200);
+
+  // Per-person conflict summary
+  const personConflicts=new Map();
+  for(const c of beforeConflicts){personConflicts.set(c.person,(personConflicts.get(c.person)||0)+1)}
+  const sortedPeople=[...personConflicts.entries()].sort((a,b)=>b[1]-a[1]);
+  if(sortedPeople.length>0){
+    let phtml=`<div class="table-section"><h3>Per-person conflicts (before)</h3><div class="person-grid">`;
+    for(const [name,cnt] of sortedPeople){
+      const info=keyPeople.find(k=>k.name===name);
+      const badgeClass=info?.priority==='Critical'?'badge-red':info?.priority==='High'?'badge-orange':'badge-green';
+      phtml+=`<div class="person-chip"><span class="name">${name} <span class="badge ${badgeClass}">${info?.priority||''}</span></span><span class="conflicts" style="color:var(--red)">${cnt}</span></div>`;
+    }
+    phtml+=`</div></div>`;
+    await addWidget(phtml,100);
+  }
+
+  // Conflicts before table
+  if(beforeConflicts.length>0){
+    let thtml=`<div class="table-section"><h3>Conflicts detected</h3><div class="table-wrap scroll-table"><table><thead><tr><th>Person</th><th>Priority</th><th>Meeting 1</th><th>Time 1</th><th>Meeting 2</th><th>Time 2</th><th>Overlap</th></tr></thead><tbody>`;
+    for(const c of beforeConflicts){
+      const pcls=c.priority==='Critical'?'critical':c.priority==='High'?'high':'';
+      thtml+=`<tr><td>${c.person}</td><td class="${pcls}">${c.priority}</td><td>${c.m1.id} ${c.m1.name}</td><td>${minToTime(c.m1.startMin)}-${minToTime(c.m1.endMin)}</td><td>${c.m2.id} ${c.m2.name}</td><td>${minToTime(c.m2.startMin)}-${minToTime(c.m2.endMin)}</td><td>${c.overlap} min</td></tr>`;
+    }
+    thtml+=`</tbody></table></div></div>`;
+    await addWidget(thtml,150);
+  }
+
+  // Change log table
+  if(changes.length>0){
+    let chtml=`<div class="table-section"><h3>Changes made</h3><div class="table-wrap scroll-table"><table><thead><tr><th>Meeting</th><th>Day</th><th>Changed</th><th>Old Time</th><th>New Time</th><th>Old Room</th><th>New Room</th></tr></thead><tbody>`;
+    for(const ch of changes){
+      chtml+=`<tr><td>${ch.id} ${ch.name}</td><td>${ch.day}</td><td>${ch.changed}</td><td class="old">${ch.oldTime}</td><td class="changed">${ch.newTime}</td><td class="old">${ch.oldRoom}</td><td class="changed">${ch.newRoom}</td></tr>`;
+    }
+    chtml+=`</tbody></table></div></div>`;
+    await addWidget(chtml,150);
+  }
+
+  // Room utilization grid
+  const dayKeys=[...new Set(optimized.map(m=>m.date.toDateString()))].sort();
+  let rgHtml=`<div class="room-grid-container"><div class="table-section"><h3>Room utilization (optimized)</h3></div>`;
+  const usedRooms=[...new Set(optimized.map(m=>m.room))].sort();
+  const gridCols=usedRooms.length+1;
+  const timeSlots=[];
+  for(let h=8;h<17;h++){if(h===12)continue;timeSlots.push(h*60);timeSlots.push(h*60+30)}
+
+  for(const dk of dayKeys){
+    const dayMeetings=optimized.filter(m=>m.date.toDateString()===dk);
+    const d=new Date(dk);
+    rgHtml+=`<div class="room-grid-day"><h4>${dateFmt(d)}</h4><div class="room-grid" style="grid-template-columns:80px repeat(${usedRooms.length},1fr)">`;
+    rgHtml+=`<div class="cell header">Time</div>`;
+    for(const r of usedRooms){
+      const short=r.includes(' - ')?r.split(' - ')[1]:r.replace('Teams: ','T:');
+      rgHtml+=`<div class="cell header">${short}</div>`;
+    }
+    for(const slot of timeSlots){
+      rgHtml+=`<div class="cell time-label">${minToTime(slot)}</div>`;
+      for(const r of usedRooms){
+        const occ=dayMeetings.find(m=>m.room===r&&m.startMin<=slot&&m.endMin>slot);
+        if(occ)rgHtml+=`<div class="cell occupied">${occ.id}</div>`;
+        else rgHtml+=`<div class="cell empty"></div>`;
+      }
+    }
+    rgHtml+=`</div></div>`;
+  }
+  rgHtml+=`</div>`;
+  await addWidget(rgHtml,200);
+
+  // Download button
+  await addWidget(`
+    <div class="gap-row mt-2">
+      <button class="btn btn-green" onclick="downloadResult()">Download optimized schedule</button>
+      <button class="btn btn-ghost" onclick="resetBot()">Start over</button>
+    </div>
+  `,300);
+
+  // Store for download
+  window._optimized=optimized;
+  window._beforeConflicts=beforeConflicts;
+  window._afterConflicts=afterConflicts;
+  window._changes=changes;
+}
+
+// === DOWNLOAD OPTIMIZED EXCEL ===
+function downloadResult(){
+  const wb=XLSX.utils.book_new();
+  const opt=window._optimized;
+  const bConf=window._beforeConflicts;
+  const aConf=window._afterConflicts;
+  const changes=window._changes;
+  const origMap=new Map(meetings.map(m=>[m.id,m]));
+
+  // Sheet 1: Optimized Schedule
+  const osData=[["Meeting ID","Meeting Name","Day","Date","Start Time","End Time","Room / Link","Organizer","Required Attendees","Optional Attendees","Duration (min)","Status","Priority","Changed?"]];
+  for(const m of opt){
+    const om=origMap.get(m.id);
+    let changed='No change';
+    if(om){
+      const tc=om.startMin!==m.startMin||om.endMin!==m.endMin;
+      const rc=om.room!==m.room;
+      if(tc&&rc)changed='Time + Room';else if(tc)changed='Time';else if(rc)changed='Room';
+    }
+    const mtgPri=mustHappenIds.has(m.id)?'Must-happen':'Flexible';
+    osData.push([m.id,m.name,dateFmt(m.date),formatDateForExcel(m.date),minToTime(m.startMin),minToTime(m.endMin),m.room,m.organizer,m.required.join(', '),m.optional.join(', '),m.duration,m.status,mtgPri,changed]);
+  }
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(osData),"Optimized Schedule");
+
+  // Sheet 2: Change Log
+  const clData=[["Meeting ID","Meeting Name","Day","What Changed","Old Time","New Time","Old Room","New Room"]];
+  for(const ch of changes)clData.push([ch.id,ch.name,ch.day,ch.changed,ch.oldTime,ch.newTime,ch.oldRoom,ch.newRoom]);
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(clData),"Change Log");
+
+  // Sheet 3: Conflict Report (Before)
+  const cbData=[["#","Person","Role","Priority","Meeting 1 ID","Meeting 1 Name","Meeting 1 Time","Meeting 2 ID","Meeting 2 Name","Meeting 2 Time","Overlap (min)"]];
+  bConf.forEach((c,i)=>{cbData.push([`C${String(i+1).padStart(3,'0')}`,c.person,c.role,c.priority,c.m1.id,c.m1.name,`${minToTime(c.m1.startMin)}-${minToTime(c.m1.endMin)}`,c.m2.id,c.m2.name,`${minToTime(c.m2.startMin)}-${minToTime(c.m2.endMin)}`,c.overlap])});
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(cbData),"Conflict Report (Before)");
+
+  // Sheet 4: Conflict Report (After)
+  const caData=[["#","Person","Role","Priority","Meeting 1 ID","Meeting 1 Name","Meeting 1 Time","Meeting 2 ID","Meeting 2 Name","Meeting 2 Time","Overlap (min)"]];
+  if(aConf.length===0)caData.push(["","No conflicts — schedule is fully optimized!","","","","","","","","",""]);
+  else aConf.forEach((c,i)=>{caData.push([`C${String(i+1).padStart(3,'0')}`,c.person,c.role,c.priority,c.m1.id,c.m1.name,`${minToTime(c.m1.startMin)}-${minToTime(c.m1.endMin)}`,c.m2.id,c.m2.name,`${minToTime(c.m2.startMin)}-${minToTime(c.m2.endMin)}`,c.overlap])});
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(caData),"Conflict Report (After)");
+
+  // Sheet 5: Person Schedules
+  const psData=[["Person","Role","Priority","Day","Meeting ID","Meeting Name","Start","End","Duration","Room","Conflicts?"]];
+  for(const kp of keyPeople){
+    const pMeetings=opt.filter(m=>[...m.required,...m.optional].includes(kp.name)).sort((a,b)=>a.date-b.date||a.startMin-b.startMin);
+    for(const m of pMeetings){
+      let hasConflict=false;
+      for(const m2 of pMeetings){if(m2.id!==m.id&&sameDay(m.date,m2.date)&&overlaps(m.startMin,m.endMin,m2.startMin,m2.endMin)){hasConflict=true;break}}
+      psData.push([kp.name,kp.role,kp.priority,dateFmt(m.date),m.id,m.name,minToTime(m.startMin),minToTime(m.endMin),`${m.duration} min`,m.room,hasConflict?'CONFLICT':'Clear']);
+    }
+  }
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(psData),"Person Schedules");
+
+  // Sheet 6: Manager Conflict & Cancellation Report
+  const mgrData=[];
+  mgrData.push(["MANAGER CONFLICT & CANCELLATION REPORT"]);
+  mgrData.push(["Generated",new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'})]);
+  mgrData.push(["Total Meetings",meetings.length]);
+  mgrData.push(["Conflicts Detected (Before Optimization)",bConf.length]);
+  mgrData.push(["Conflicts Remaining (After Optimization)",aConf.length]);
+  mgrData.push(["Meetings Rescheduled",changes.length]);
+  mgrData.push(["Must-Happen Meetings",mustHappenIds.size]);
+  mgrData.push([]);
+  // Unresolved conflicts requiring manager action
+  if(aConf.length>0){
+    mgrData.push(["UNRESOLVED CONFLICTS - ACTION REQUIRED"]);
+    mgrData.push(["#","Person","Role","Priority","Conflicting Meeting 1","Time 1","Conflicting Meeting 2","Time 2","Overlap (min)","Recommended Action"]);
+    aConf.forEach((c,i)=>{
+      const isMH1=mustHappenIds.has(c.m1.id),isMH2=mustHappenIds.has(c.m2.id);
+      let action='Reschedule one meeting';
+      if(isMH1&&!isMH2)action=`Cancel/reschedule "${c.m2.name}" (${c.m1.name} is must-happen)`;
+      else if(!isMH1&&isMH2)action=`Cancel/reschedule "${c.m1.name}" (${c.m2.name} is must-happen)`;
+      else if(c.priority==='Critical')action=`URGENT: ${c.person} is Critical - escalate to decide which meeting to cancel`;
+      else action=`Remove ${c.person} from one meeting or reschedule`;
+      mgrData.push([`C${String(i+1).padStart(3,'0')}`,c.person,c.role,c.priority,`${c.m1.id} ${c.m1.name}`,`${minToTime(c.m1.startMin)}-${minToTime(c.m1.endMin)}`,`${c.m2.id} ${c.m2.name}`,`${minToTime(c.m2.startMin)}-${minToTime(c.m2.endMin)}`,c.overlap,action]);
+    });
+    mgrData.push([]);
+  }else{
+    mgrData.push(["ALL CONFLICTS RESOLVED - No cancellations required"]);
+    mgrData.push([]);
+  }
+  // Meetings that were significantly changed (for manager awareness)
+  mgrData.push(["MEETINGS RESCHEDULED (for manager awareness)"]);
+  mgrData.push(["Meeting ID","Meeting Name","Day","Change Type","Original Time","New Time","Original Room","New Room","Meeting Type","Priority"]);
+  for(const ch of changes){
+    const mtg=opt.find(m=>m.id===ch.id);
+    const mtype=mtg&&isVirtualRoom(mtg.room)?'Virtual':'In-person';
+    const pri=mustHappenIds.has(ch.id)?'Must-happen':'Flexible';
+    mgrData.push([ch.id,ch.name,ch.day,ch.changed,ch.oldTime,ch.newTime,ch.oldRoom,ch.newRoom,mtype,pri]);
+  }
+  mgrData.push([]);
+  // Key people workload summary
+  mgrData.push(["KEY PEOPLE WORKLOAD SUMMARY"]);
+  mgrData.push(["Name","Role","Priority","Total Meetings","Remaining Conflicts","Status"]);
+  for(const kp of keyPeople){
+    const pMeetings=opt.filter(m=>[...m.required,...m.optional].includes(kp.name));
+    const pConflicts=aConf.filter(c=>c.person===kp.name).length;
+    const status=pConflicts>0?'HAS CONFLICTS - needs attention':'Clear';
+    mgrData.push([kp.name,kp.role,kp.priority,pMeetings.length,pConflicts,status]);
+  }
+  mgrData.push([]);
+  // Virtual vs in-person breakdown
+  const virtualCount=opt.filter(m=>isVirtualRoom(m.room)).length;
+  const inPersonCount=opt.length-virtualCount;
+  mgrData.push(["MEETING TYPE BREAKDOWN"]);
+  mgrData.push(["In-person meetings",inPersonCount]);
+  mgrData.push(["Virtual meetings (8-11 AM)",virtualCount]);
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(mgrData),"Manager Report");
+
+  // Sheet 7: Key People (preserve input)
+  const kpData=[["Name","Role","Priority"]];
+  for(const kp of keyPeople)kpData.push([kp.name,kp.role,kp.priority]);
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(kpData),"Key People");
+
+  XLSX.writeFile(wb,"Optimized_Schedule.xlsx");
+}
+
+function formatDateForExcel(d){
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function resetBot(){
+  chat.innerHTML='';
+  keyPeople=[];meetings=[];rooms=[];mustHappenIds=new Set();
+  init();
+}
+
+// === GO ===
+init();
+</script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"75124c326cb447fe934cde04713ae013","r":1,"server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body>
+</html>
